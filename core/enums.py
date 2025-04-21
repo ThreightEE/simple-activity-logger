@@ -1,3 +1,5 @@
+from django.db import models
+
 class ActivityType:
     """
     Constants for types of physical activities, as custom enum implementation.
@@ -58,3 +60,10 @@ class ActivityType:
         """Return MET value for activity value"""
         value = cls.validate(value)  # Using the common validation method
         return cls._MET_VALUES[value]
+    
+# Choices for status field in Activity model
+class ProcessingStatus(models.TextChoices):
+    PENDING = 'PENDING', 'Pending'
+    PROCESSING = 'PROCESSING', 'Processing'
+    COMPLETED = 'COMPLETED', 'Completed'
+    FAILED = 'FAILED', 'Failed'
