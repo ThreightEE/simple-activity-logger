@@ -15,6 +15,9 @@ from pathlib import Path
 import os
 import environ
 
+celery_task_limit_seconds = 30 * 60
+celery_task_limit_soft_seconds = 25 * 60
+
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
 
@@ -23,14 +26,12 @@ env = environ.Env()
 env_dir = os.path.join(BASE_DIR, '.env')
 environ.Env.read_env(env_dir)
 
-# Quick-start development settings - unsuitable for production
-# See https://docs.djangoproject.com/en/4.2/howto/deployment/checklist/
-
 # SECURITY WARNING: keep the secret key used in production secret!
 SECRET_KEY = env('SECRET_KEY', default='django-insecure-xj^bi5%is+6v@mv++edtyo9@!^k1%m(uow&7)a2er7i9ms8#=t')
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = env.bool('DEBUG', default=True)
 ALLOWED_HOSTS = env.list('ALLOWED_HOSTS', default=['localhost', '127.0.0.1'])
+
 
 # Application definition -- all applications that are enabled in this project
 
@@ -79,28 +80,15 @@ WSGI_APPLICATION = 'activity_logger.wsgi.application'
 
 
 # Database
-# https://docs.djangoproject.com/en/4.2/ref/settings/#databases
-DEFAULT_DB_URL = f"postgres://{env('DATABASE_USER', default='postgres')}:{env('DATABASE_PASSWORD', default='postgres')}@{env('DATABASE_HOST', default='db')}:{env('DATABASE_PORT', default='5432')}/{env('DATABASE_NAME', default='activity_db')}"
 
+DEFAULT_DB_URL = f"postgres://{env('DATABASE_USER', default='postgres')}:{env('DATABASE_PASSWORD', default='postgres')}@{env('DATABASE_HOST', default='db')}:{env('DATABASE_PORT', default='5432')}/{env('DATABASE_NAME', default='activity_db')}"
+# Reads DATABASE_URL env var, falls back to constructing from parts
 DATABASES = {
-    # Reads DATABASE_URL env var, falls back to constructing from parts
     'default': env.db_url('DATABASE_URL', default=DEFAULT_DB_URL)
 }
 
-'''DATABASES = {
-    'default': {
-        'ENGINE': 'django.db.backends.postgresql',
-        'NAME': env('DATABASE_NAME', default='activity_db'),
-        'USER': env('DATABASE_USER', default='postgres'),
-        'PASSWORD': env('DATABASE_PASSWORD', default='postgres'),
-        'HOST': env('DATABASE_HOST', default='localhost'),
-        'PORT': env('DATABASE_PORT', default='5432'),
-    }
-}'''
-
 
 # Password validation
-# https://docs.djangoproject.com/en/4.2/ref/settings/#auth-password-validators
 
 AUTH_PASSWORD_VALIDATORS = [
     {
@@ -119,29 +107,38 @@ AUTH_PASSWORD_VALIDATORS = [
 
 
 # Internationalization
-# https://docs.djangoproject.com/en/4.2/topics/i18n/
 
 LANGUAGE_CODE = 'en-us'
-
 TIME_ZONE = 'UTC'
-
 USE_I18N = True
-
 USE_TZ = True
 
 
 # Static files (CSS, JavaScript, Images)
-# https://docs.djangoproject.com/en/4.2/howto/static-files/
 
 STATIC_URL = 'static/'
 
+
 # Default primary key field type
-# https://docs.djangoproject.com/en/4.2/ref/settings/#default-auto-field
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
+
+
+# Celery conf
 
 CELERY_BROKER_URL = env('CELERY_BROKER_URL', default='redis://localhost:6379/0')
 CELERY_RESULT_BACKEND = env('CELERY_RESULT_BACKEND', default='redis://localhost:6379/0')
 CELERY_ACCEPT_CONTENT = ['json']
 CELERY_TASK_SERIALIZER = 'json'
 CELERY_TIMEZONE = TIME_ZONE
+
+CELERY_RESULT_SERIALIZER = 'json'
+
+# Store task results in Django
+CELERY_RESULT_BACKEND = 'django-db'
+CELERY_TASK_TIME_LIMIT = celery_task_limit_seconds
+CELERY_TASK_SOFT_TIME_LIMIT = celery_task_limit_soft_seconds
+
+CELERY_TASK_ROUTES = {
+    'core.tasks.process_activity': {'queue': 'activities'},
+}

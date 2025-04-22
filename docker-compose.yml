@@ -37,7 +37,7 @@ services:
   
   celery:
     build: .
-    command: celery -A activity_logger worker --loglevel=info
+    command: celery -A activity_logger worker -l info -Q activities
     volumes:
       - .:/app
     environment:
