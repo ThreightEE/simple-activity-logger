@@ -15,6 +15,12 @@ class ActivityForm(forms.ModelForm):
             'notes': forms.Textarea(attrs={'rows': 3})
         }
 
+    # Remove empty choice
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields['activity_type'].choices = ActivityType.choices()
+        self.fields['activity_type'].empty_label = None
+
     def clean_activity_type(self):
         activity_type = self.cleaned_data.get('activity_type')
         return ActivityType.validate(activity_type)

@@ -12,6 +12,8 @@ from .enums import ProcessingStatus
 
 # Create your views here.
 
+listview_paginate = 10
+
 logger = logging.getLogger(__name__)
 
 class ActivityListView(ListView):
@@ -21,7 +23,7 @@ class ActivityListView(ListView):
     model = Activity
     template_name = 'core/activity_list.html'
     context_object_name = 'activities'
-    paginate_by = 10
+    paginate_by = listview_paginate
     
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
