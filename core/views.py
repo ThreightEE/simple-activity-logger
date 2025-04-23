@@ -12,6 +12,8 @@ from .enums import ProcessingStatus
 from django.db import transaction
 from .tasks import process_activity
 
+from django.http import JsonResponse
+
 
 listview_paginate = 10
 
@@ -84,3 +86,39 @@ class ActivityCreateView(CreateView):
         )
         
         return response
+
+
+# Real-time update
+
+def activity_status_api(request, pk):
+    activity = get_object_or_404(Activity, pk=pk)
+    return JsonResponse({
+        'status': activity.status,
+        'status_display': activity.get_status_display(),
+        'calories': float(activity.calories_burned) if activity.calories_burned else None,
+        'processed_at': activity.processed_at.isoformat() if activity.processed_at else None,
+        'error': activity.error_message or None,
+        'updated_at': activity.updated_at.isoformat(),
+    })
+
+def activity_list_api(request):
+    raw_ids = request.GET.get('ids', '')
+    valid_ids = []
+    
+    for id_str in raw_ids.split(','):
+        try:
+            if id_str.strip():
+                valid_ids.append(int(id_str))
+        except (ValueError, TypeError):
+            continue
+    
+    activities = Activity.objects.filter(pk__in=valid_ids) if valid_ids else []
+    data = {
+        str(activity.id): {
+            'status': activity.status,
+            'status_display': activity.get_status_display(),
+            'calories': float(activity.calories_burned) if activity.calories_burned else None
+        }
+        for activity in activities
+    }
+    return JsonResponse(data)

@@ -9,11 +9,11 @@
     </a>
 </div>
 
-<div class="card shadow-sm">
+<div class="card shadow-sm" data-activity-id="{{ activity.id }}">
     <!-- Activity header -->
     <div class="card-header bg-primary text-white d-flex justify-content-between align-items-center">
         <h5 class="mb-0">{{ activity.get_activity_type_display }} Activity</h5>
-        <span class="badge {% if activity.status == 'COMPLETED' %}bg-success{% elif activity.status == 'PROCESSING' %}bg-primary{% elif activity.status == 'PENDING' %}bg-warning text-dark{% else %}bg-danger{% endif %}">
+        <span class="badge status-badge {% if activity.status == 'COMPLETED' %}bg-success{% elif activity.status == 'PROCESSING' %}bg-primary{% elif activity.status == 'PENDING' %}bg-warning text-dark{% else %}bg-danger{% endif %}">
             {{ activity.get_status_display }}
         </span>
     </div>
@@ -31,12 +31,16 @@
                 <div class="fs-4">{{ activity.weight_kg }} kg</div>
             </div>
             
-            {% if activity.calories_burned %}
             <div class="mb-3">
                 <div class="text-muted small">CALORIES</div>
-                <div class="fs-4">{{ activity.calories_burned }} kcal</div>
+                <div class="fs-4 calories-value">
+                    {% if activity.calories_burned %}
+                        {{ activity.calories_burned|floatformat:2 }} kcal
+                    {% else %}
+                        Calculating...
+                    {% endif %}
+                </div>
             </div>
-            {% endif %}
         </div>
         
         <!-- Processing info -->
@@ -49,25 +53,29 @@
                         <div>{{ activity.created_at|date:"M d, Y H:i:s" }}</div>
                     </div>
                     
-                    {% if activity.processed_at %}
-                    <div class="col-md-6">
+                    <div class="col-md-6 processed-time-container" {% if not activity.processed_at %}style="display:none;"{% endif %}>
                         <small class="text-muted d-block">Processed</small>
-                        <div>{{ activity.processed_at|date:"M d, Y H:i:s" }}</div>
-                    </div>
-                    
-                    <div class="col-md-12">
-                        <small class="text-muted d-block">Processing Time</small>
-                        <div>{{ activity.processing_time|floatformat:2 }} seconds</div>
-                    </div>
-                    {% endif %}
-                    
-                    {% if activity.error_message %}
-                    <div class="col-12">
-                        <div class="alert alert-danger mb-0">
-                            {{ activity.error_message }}
+                        <div class="processed-time">
+                            {% if activity.processed_at %}
+                                {{ activity.processed_at|date:"M d, Y H:i:s" }}
+                            {% endif %}
                         </div>
                     </div>
-                    {% endif %}
+                    
+                    <div class="col-md-12 processing-time-container" {% if not activity.processing_time %}style="display:none;"{% endif %}>
+                        <small class="text-muted d-block">Processing Time</small>
+                        <div class="processing-time">
+                            {% if activity.processing_time %}
+                                {{ activity.processing_time|floatformat:2 }} seconds
+                            {% endif %}
+                        </div>
+                    </div>
+                    
+                    <div class="col-12 error-message-container" {% if not activity.error_message %}style="display:none;"{% endif %}>
+                        <div class="alert alert-danger mb-0 error-message">
+                            {{ activity.error_message|default:"" }}
+                        </div>
+                    </div>
                 </div>
             </div>
         </div>
@@ -97,10 +105,10 @@
                         <div class="row">
                             <div class="col-md-6">
                                 <p><strong>ID:</strong> {{ activity.id }}</p>
-                                <p><strong>Last Updated:</strong> {{ activity.updated_at|date:"M d, Y H:i:s" }}</p>
+                                <p><strong>Last Updated:</strong> <span class="last-updated">{{ activity.updated_at|date:"M d, Y H:i:s" }}</span></p>
                             </div>
                             <div class="col-md-6">
-                                <p><strong>Celery Task ID:</strong> {{ activity.celery_task_id|default:"N/A" }}</p>
+                                <p><strong>Celery Task ID:</strong> <span class="celery-task-id">{{ activity.celery_task_id|default:"N/A" }}</span></p>
                             </div>
                         </div>
                     </div>
@@ -109,4 +117,88 @@
         </div>
     </div>
 </div>
+
+{% block extra_js %}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const activityId = JSON.parse("{{ activity.id|escapejs }}");
+    let lastServerUpdate = "{{ activity.updated_at|date:'c' }}";
+
+    const elements = {
+        statusBadge: document.querySelector('.status-badge'),
+        caloriesValue: document.querySelector('.calories-value'),
+        processedTime: document.querySelector('.processed-time'),
+        processingTime: document.querySelector('.processing-time'),
+        errorMessage: document.querySelector('.error-message'),
+        lastUpdated: document.querySelector('.last-updated'),
+        celeryTaskId: document.querySelector('.celery-task-id'),
+        containers: {
+            processed: document.querySelector('.processed-time-container'),
+            processing: document.querySelector('.processing-time-container'),
+            error: document.querySelector('.error-message-container')
+        }
+    };
+
+    function updateActivity() {
+        fetch(`{% url 'activity-status-api' activity.id %}`)
+            .then(response => {
+                if (!response.ok) throw Error('Network error');
+                return response.json();
+            })
+            .then(data => {
+                if (data.updated_at !== lastServerUpdate) {
+                    lastServerUpdate = data.updated_at;
+
+                    elements.statusBadge.textContent = data.status_display;
+                    elements.statusBadge.className = `badge status-badge ${
+                        data.status === 'COMPLETED' ? 'bg-success' :
+                        data.status === 'PROCESSING' ? 'bg-primary' :
+                        data.status === 'PENDING' ? 'bg-warning text-dark' : 'bg-danger'
+                    }`;
+
+                    elements.caloriesValue.textContent = data.calories ? 
+                        `${data.calories.toFixed(2)} kcal` : 'Calculating...';
+
+                    const updatedDate = new Date(data.updated_at);
+                    elements.lastUpdated.textContent = updatedDate.toLocaleString();
+
+                    if (data.processed_at) {
+                        const processedDate = new Date(data.processed_at);
+                        elements.processedTime.textContent = processedDate.toLocaleString();
+                        elements.containers.processed.style.display = 'block';
+                        
+                        const processingSeconds = (processedDate - new Date("{{ activity.created_at|date:'c' }}")) / 1000;
+                        elements.processingTime.textContent = `${processingSeconds.toFixed(2)} seconds`;
+                        elements.containers.processing.style.display = 'block';
+                    }
+
+                    if (data.error) {
+                        elements.errorMessage.textContent = data.error;
+                        elements.containers.error.style.display = 'block';
+                    } else {
+                        elements.containers.error.style.display = 'none';
+                    }
+
+                    if (data.celery_task_id) {
+                        elements.celeryTaskId.textContent = data.celery_task_id;
+                    }
+                }
+            })
+            .catch(error => console.error('Update error:', error));
+    }
+
+    const interval = setInterval(() => {
+        const currentStatus = elements.statusBadge.textContent;
+        if (currentStatus === 'Completed' || currentStatus === 'Failed') {
+            clearInterval(interval);
+            return;
+        }
+        updateActivity();
+    }, 1000);
+
+    updateActivity();
+});
+</script>
+{% endblock %}
+
 {% endblock %}

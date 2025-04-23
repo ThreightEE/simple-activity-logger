@@ -1,4 +1,3 @@
-<!-- core/templates/core/activity_list.html -->
 {% extends 'core/base.html' %}
 
 {% block title %}My Activities{% endblock %}
@@ -25,10 +24,10 @@
     <div class="row row-cols-1 row-cols-md-2 row-cols-lg-3 g-4">
         {% for activity in activities %}
         <div class="col">
-            <div class="card h-100 {% if activity.status == 'FAILED' %}border-danger{% elif activity.status == 'COMPLETED' %}border-success{% endif %}">
+            <div class="card h-100 {% if activity.status == 'FAILED' %}border-danger{% elif activity.status == 'COMPLETED' %}border-success{% endif %}" data-activity-id="{{ activity.id }}">
                 <div class="card-header d-flex justify-content-between align-items-center">
                     <span>{{ activity.get_activity_type_display }}</span>
-                    <span class="badge {% if activity.status == 'COMPLETED' %}bg-success{% elif activity.status == 'PROCESSING' %}bg-primary{% elif activity.status == 'PENDING' %}bg-warning text-dark{% else %}bg-danger{% endif %}">
+                    <span class="badge status-badge {% if activity.status == 'COMPLETED' %}bg-success{% elif activity.status == 'PROCESSING' %}bg-primary{% elif activity.status == 'PENDING' %}bg-warning text-dark{% else %}bg-danger{% endif %}">
                         {{ activity.get_status_display }}
                     </span>
                 </div>
@@ -36,7 +35,7 @@
                     <h5 class="card-title">{{ activity.duration_minutes }} minutes</h5>
                     <p class="card-text text-muted mb-1">{{ activity.created_at|date:"M d, Y" }}</p>
                     {% if activity.calories_burned %}
-                    <p class="card-text">Calories: {{ activity.calories_burned }} kcal</p>
+                    <p class="card-text calories-text">Calories: {{ activity.calories_burned }} kcal</p>
                     {% endif %}
                 </div>
                 <div class="card-footer bg-transparent">
@@ -100,4 +99,60 @@
         </a>
     </div>
 {% endif %}
+{% endblock %}
+
+{% block extra_js %}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const activityCards = document.querySelectorAll('[data-activity-id]');
+    const activityIds = Array.from(activityCards).map(card => {
+        const id = card.dataset.activityId;
+        return id ? parseInt(id) : null;
+    }).filter(id => Number.isInteger(id));
+
+    if (activityIds.length === 0) return;
+
+    function updateStatuses() {
+        const params = new URLSearchParams();
+        params.append('ids', activityIds.join(','));
+
+        fetch(`{% url 'activity-list-api' %}?${params}`)
+            .then(response => {
+                if (!response.ok) throw new Error('Network response was not ok');
+                return response.json();
+            })
+            .then(data => {
+                activityCards.forEach(card => {
+                    const activityId = card.dataset.activityId;
+                    const activityData = data[activityId];
+                    if (!activityData) return;
+
+                    const badge = card.querySelector('.status-badge');
+                    if (badge) {
+                        badge.textContent = activityData.status_display;
+                        badge.className = `badge status-badge ${
+                            activityData.status === 'COMPLETED' ? 'bg-success' :
+                            activityData.status === 'PROCESSING' ? 'bg-primary' :
+                            activityData.status === 'PENDING' ? 'bg-warning text-dark' : 'bg-danger'
+                        }`;
+                    }
+
+                    const caloriesElem = card.querySelector('.calories-text');
+                    if (caloriesElem) {
+                        caloriesElem.textContent = activityData.calories ? 
+                            `Calories: ${activityData.calories.toFixed(2)} kcal` : '';
+                    }
+                });
+            })
+            .catch(error => console.error('Fetch error:', error));
+    }
+
+    const interval = setInterval(updateStatuses, 2000);
+    updateStatuses();
+
+    window.addEventListener('beforeunload', () => {
+        clearInterval(interval);
+    });
+});
+</script>
 {% endblock %}
