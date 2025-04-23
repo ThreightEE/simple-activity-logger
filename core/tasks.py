@@ -11,13 +11,15 @@ delay_time = 3
 # Time before retrying on error
 retry_time = 60
 
-@shared_task(bind=True, max_retries=3)
+@shared_task(bind=True, max_retries=3, default_retry_delay=retry_time)
 def process_activity(self, activity_id):
     """
     Calculate calories burned and update status.
     ! Delay to simulate processing.
     Retry if fails.
     """
+    # Start timing for performance monitoring
+    start_time = time.time()
 
     try:
         activity = Activity.objects.get(id=activity_id)
@@ -26,9 +28,10 @@ def process_activity(self, activity_id):
         logger.error(f"Activity {activity_id} not found")
         return False
 
+    activity.update_status(ProcessingStatus.PROCESSING)
     logger.info(f"Starting processing activity {activity_id}")
+    
     try:
-        activity.update_status(ProcessingStatus.PROCESSING)
         activity.celery_task_id = self.request.id
         activity.save(update_fields=['celery_task_id'])
         
@@ -42,21 +45,29 @@ def process_activity(self, activity_id):
             raise ValueError("Failed to calculate calories")
         
         activity.update_status(ProcessingStatus.COMPLETED, calories=calories)
-        logger.info(f"Successfully processed activity {activity_id}, burned {calories} calories")
+        duration = time.time() - start_time
+        logger.info(
+            f"Successfully processed activity {activity_id}: burned {calories} calories"
+            f" - in {duration:.2f}s"
+        )
         return True
     
     except Exception as exc:
-        logger.exception(f"Error processing activity {activity_id}: {str(exc)}")
+        duration = time.time() - start_time
+        logger.exception(
+            f"Error processing activity {activity_id} after {duration:.2f}s: {str(exc)}"
+        )
         
-        # Update status if possible
+        # Update status to FAILED if possible
         try:
-            activity = Activity.objects.get(id=activity_id)
             activity.update_status(
                 ProcessingStatus.FAILED, 
                 error_msg=f"Processing error: {str(exc)}"
             )
-        except Exception:
-            pass
+        except Exception as update_exc:
+            logger.exception(
+                f"Failed to update failed activity {activity_id} status: {str(update_exc)}"
+            )
         
         # Retry with respect to max_retries
-        raise self.retry(exc=exc, countdown=retry_time)
+        raise self.retry(exc=exc)

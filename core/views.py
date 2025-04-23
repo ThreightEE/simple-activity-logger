@@ -1,20 +1,22 @@
 from django.shortcuts import render
 
 import logging
-from django.shortcuts import render, redirect, get_object_or_404
+from django.shortcuts import get_object_or_404
 from django.contrib import messages
 from django.views.generic import ListView, DetailView, CreateView
 from django.urls import reverse_lazy
 from .models import Activity
 from .forms import ActivityForm
-# from .tasks import process activity method for celery
 from .enums import ProcessingStatus
 
-# Create your views here.
+from django.db import transaction
+from .tasks import process_activity
+
 
 listview_paginate = 10
 
 logger = logging.getLogger(__name__)
+
 
 class ActivityListView(ListView):
     """
@@ -33,6 +35,7 @@ class ActivityListView(ListView):
         ).count()
         return context
 
+
 class ActivityDetailView(DetailView):
     """
     Show information about single activity.
@@ -41,9 +44,10 @@ class ActivityDetailView(DetailView):
     template_name = 'core/activity_detail.html'
     context_object_name = 'activity'
 
+
 class ActivityCreateView(CreateView):
     """
-    Creation of activities.
+    Creation of activity.
     """
     model = Activity
     form_class = ActivityForm
@@ -52,20 +56,31 @@ class ActivityCreateView(CreateView):
     
     def form_valid(self, form):
         """
-        Save the form.
-
-        TO DO: add Celery task call ! ! ! ! !
+        Saves form after submission if it's valid. Calls celery task.
         """
-        response = super().form_valid(form)
-        # Get the new activity instance
-        activity = self.object
-        # Log the creation
-        logger.info(f"New activity created: {activity.id} ({activity.activity_type})")
-        
-        # Add success message
+
+        # Ensure both or neither saving model and queuing task
+        with transaction.atomic():
+            # Save form normally
+            response = super().form_valid(form)
+            # Get the new activity instance
+            activity = self.object
+            # Queue task with default options and get its id
+            task_result = process_activity.delay(activity.id)
+
+            # Store id in the model
+            activity.celery_task_id = task_result.id
+            activity.save(update_fields=['celery_task_id'])
+
+            # Log the creation
+            logger.info(
+                f"New activity created: {activity.id} ({activity.activity_type}), "
+                f"and queued for processing with task {task_result.id}"
+            )
+
         messages.success(
             self.request, 
-            "Activity logged successfully [and is queued for processing]."
+            "Activity logged successfully and queued for processing."
         )
         
         return response
