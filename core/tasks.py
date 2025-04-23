@@ -18,19 +18,21 @@ def process_activity(self, activity_id):
     ! Delay to simulate processing.
     Retry if fails.
     """
+
+    try:
+        activity = Activity.objects.get(id=activity_id)
+    # Will not retry the task if activity doesn't exist
+    except Activity.DoesNotExist:
+        logger.error(f"Activity {activity_id} not found")
+        return False
+
     logger.info(f"Starting processing activity {activity_id}")
     try:
-        try:
-            activity = Activity.objects.get(id=activity_id)
-        except Activity.DoesNotExist:
-            logger.error(f"Activity {activity_id} not found")
-            return False
-        
         activity.update_status(ProcessingStatus.PROCESSING)
         activity.celery_task_id = self.request.id
         activity.save(update_fields=['celery_task_id'])
         
-        # Simulate work with delay here ! ! !
+        # Delay happens here ! ! !
         processing_time = delay_time
         logger.info(f"Got the activity {activity_id}, processing for {processing_time}s")
         time.sleep(processing_time)
@@ -56,5 +58,5 @@ def process_activity(self, activity_id):
         except Exception:
             pass
         
-        # Retry the task with respect to max_retries
+        # Retry with respect to max_retries
         raise self.retry(exc=exc, countdown=retry_time)
