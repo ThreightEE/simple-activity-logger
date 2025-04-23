@@ -6,12 +6,20 @@ from .models import Activity
 from .enums import ProcessingStatus
 
 logger = logging.getLogger(__name__)
+
 # Processing delay in seconds
-delay_time = 3
+delay_time = 5
+max_retries_ = 3
 # Time before retrying on error
 retry_time = 60
 
-@shared_task(bind=True, max_retries=3, default_retry_delay=retry_time)
+
+@shared_task(
+    bind=True,
+    max_retries=max_retries_,
+    default_retry_delay=retry_time,
+    ignore_result=True
+)
 def process_activity(self, activity_id):
     """
     Calculate calories burned and update status.
@@ -36,9 +44,8 @@ def process_activity(self, activity_id):
         activity.save(update_fields=['celery_task_id'])
         
         # Delay happens here ! ! !
-        processing_time = delay_time
-        logger.info(f"Got the activity {activity_id}, processing for {processing_time}s")
-        time.sleep(processing_time)
+        logger.info(f"Got the activity {activity_id}, processing for {delay_time}s")
+        time.sleep(delay_time)
         
         calories = activity.calculate_calories()
         if calories is None:
@@ -71,3 +78,27 @@ def process_activity(self, activity_id):
         
         # Retry with respect to max_retries
         raise self.retry(exc=exc)
+    
+
+@shared_task
+def requeue_pending_activities():    
+    cutoff = timezone.now() - timezone.timedelta(minutes=1)
+    pendings = Activity.objects.filter(
+        status=ProcessingStatus.PENDING,
+        celery_task_id__isnull=True,
+        created_at__lte=cutoff
+    )
+    
+    count = pendings.count()
+    logger.info(f"Found {count} activities stuck in PENDING status")
+    
+    for activity in pendings:
+        try:
+            result = process_activity.delay(activity.id)
+            activity.celery_task_id = result.id
+            activity.save(update_fields=['celery_task_id'])
+            logger.info(f"Requeued activity {activity.id} with task {result.id}")
+        except Exception as e:
+            logger.error(f"Failed to requeue activity {activity.id}: {str(e)}")
+
+    return f"Processed {count} pending activities"

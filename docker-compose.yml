@@ -50,5 +50,19 @@ services:
       - db
       - redis
 
+  celery-beat:
+    build: .
+    command: celery -A activity_logger beat --loglevel=info
+    volumes:
+      - .:/app
+    depends_on:
+      - redis
+      - db
+    environment:
+      - DATABASE_URL=postgres://postgres:postgres@db:5432/activity_db
+      - CELERY_BROKER_URL=redis://redis:6379/0
+      - REDIS_URL=redis://redis:6379/0
+      - CELERY_RESULT_BACKEND=redis://redis:6379/0
+
 volumes:
   postgres_data:
