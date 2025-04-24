@@ -99,22 +99,46 @@ def process_activity(self, activity_id):
 @shared_task
 def requeue_pending_activities():    
     cutoff = timezone.now() - timezone.timedelta(minutes=1)
-    pendings = Activity.objects.filter(
+
+    pending_activities = Activity.objects.filter(
         status=ProcessingStatus.PENDING,
-        celery_task_id__isnull=True,
         created_at__lte=cutoff
     )
+
+    failed_activities = Activity.objects.filter(
+        status=ProcessingStatus.FAILED,
+    )
     
-    count = pendings.count()
-    logger.info(f"Found {count} activities stuck in PENDING status")
+    pending_count = pending_activities.count()
+    failed_count = failed_activities.count()
     
-    for activity in pendings:
+    logger.info(f"Found {pending_count} activities stuck in PENDING status")
+    logger.info(f"Found {failed_count} FAILED activities to retry")
+    
+    for activity in pending_activities:
         try:
             result = process_activity.delay(activity.id)
             activity.celery_task_id = result.id
             activity.save(update_fields=['celery_task_id'])
             logger.info(f"Requeued activity {activity.id} with task {result.id}")
+        
         except Exception as e:
             logger.error(f"Failed to requeue activity {activity.id}: {str(e)}")
 
-    return f"Processed {count} pending activities"
+    for activity in failed_activities:
+        try:
+            result = process_activity.delay(activity.id)
+            activity.status = ProcessingStatus.PENDING
+            activity.celery_task_id = result.id
+            activity.error_message = f"Retrying after {activity.error_message}"
+            activity.save(update_fields=['status', 'celery_task_id', 'error_message'])
+            
+            logger.info(f"Retrying FAILED activity {activity.id} with new task {result.id}")
+        except Exception as e:
+            logger.error(f"Failed to retry FAILED activity {activity.id}: {str(e)}")
+
+    total_requeued = pending_count + failed_count
+    if total_requeued > 0:
+        increment_counter('tasks_requeued', total_requeued)
+    
+    return f"Requeued {pending_count} pending and {failed_count} failed activities"
