@@ -34,9 +34,10 @@
                 <div class="card-body">
                     <h5 class="card-title">{{ activity.duration_minutes }} minutes</h5>
                     <p class="card-text text-muted mb-1">{{ activity.created_at|date:"M d, Y" }}</p>
-                    {% if activity.calories_burned %}
-                    <p class="card-text calories-text">Calories: {{ activity.calories_burned }} kcal</p>
-                    {% endif %}
+                    <!-- Always include calories paragraph, just hide it if empty -->
+                    <p class="card-text calories-text" {% if not activity.calories_burned %}style="display:none;"{% endif %}>
+                        Calories: {% if activity.calories_burned %}{{ activity.calories_burned }}{% endif %} kcal
+                    </p>
                 </div>
                 <div class="card-footer bg-transparent">
                     <a href="{% url 'activity-detail' activity.pk %}" class="btn btn-sm btn-outline-primary w-100">View Details</a>
@@ -139,8 +140,19 @@ document.addEventListener('DOMContentLoaded', function() {
 
                     const caloriesElem = card.querySelector('.calories-text');
                     if (caloriesElem) {
-                        caloriesElem.textContent = activityData.calories ? 
-                            `Calories: ${activityData.calories.toFixed(2)} kcal` : '';
+                        if (activityData.calories) {
+                            caloriesElem.style.display = ''; // Show the element
+                            caloriesElem.textContent = `Calories: ${activityData.calories.toFixed(2)} kcal`;
+                        } else {
+                            caloriesElem.style.display = 'none'; // Hide if no calories
+                        }
+                    }
+
+                    // Update card border based on status
+                    if (activityData.status === 'COMPLETED') {
+                        card.className = card.className.replace(/border-\w+/g, '') + ' border-success';
+                    } else if (activityData.status === 'FAILED') {
+                        card.className = card.className.replace(/border-\w+/g, '') + ' border-danger';
                     }
                 });
             })
