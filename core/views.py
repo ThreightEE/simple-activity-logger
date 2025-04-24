@@ -13,6 +13,7 @@ from django.db import transaction
 from .tasks import process_activity
 
 from django.http import JsonResponse
+from .monitoring import get_counter
 
 
 listview_paginate = 10
@@ -120,5 +121,15 @@ def activity_list_api(request):
             'calories': float(activity.calories_burned) if activity.calories_burned else None
         }
         for activity in activities
+    }
+    return JsonResponse(data)
+
+
+def metrics_json(request):
+    data = {
+        'tasks_started': get_counter('tasks_started'),
+        'tasks_completed': get_counter('tasks_completed'),
+        'tasks_failed': get_counter('tasks_failed'),
+        'total_calories': get_counter('total_calories'),
     }
     return JsonResponse(data)

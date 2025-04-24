@@ -5,6 +5,9 @@ from django.utils import timezone
 from .models import Activity
 from .enums import ProcessingStatus
 
+from .monitoring import increment_counter, increment_counter_by
+
+
 logger = logging.getLogger(__name__)
 
 # Processing delay in seconds
@@ -26,6 +29,9 @@ def process_activity(self, activity_id):
     ! Delay to simulate processing.
     Retry if fails.
     """
+
+    increment_counter('tasks_started')
+
     # Start timing for performance monitoring
     start_time = time.time()
 
@@ -52,11 +58,17 @@ def process_activity(self, activity_id):
             raise ValueError("Failed to calculate calories")
         
         activity.update_status(ProcessingStatus.COMPLETED, calories=calories)
+
         duration = time.time() - start_time
         logger.info(
             f"Successfully processed activity {activity_id}: burned {calories} calories"
             f" - in {duration:.2f}s"
         )
+
+        increment_counter('tasks_completed')
+        calories_int = int(float(calories))
+        increment_counter_by('total_calories', calories_int)
+
         return True
     
     except Exception as exc:
@@ -64,6 +76,8 @@ def process_activity(self, activity_id):
         logger.exception(
             f"Error processing activity {activity_id} after {duration:.2f}s: {str(exc)}"
         )
+
+        increment_counter('tasks_failed')
         
         # Update status to FAILED if possible
         try:
