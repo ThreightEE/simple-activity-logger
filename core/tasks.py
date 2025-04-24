@@ -14,7 +14,7 @@ logger = logging.getLogger(__name__)
 delay_time = 5
 max_retries_ = 3
 # Time before retrying on error
-retry_time = 60
+retry_time = 30
 
 
 @shared_task(
@@ -40,7 +40,9 @@ def process_activity(self, activity_id):
     # Will not retry the task if activity doesn't exist
     except Activity.DoesNotExist:
         logger.error(f"Activity {activity_id} not found")
-        return False
+        
+        retry_delay = retry_time * (2 ** self.request.retries)
+        raise self.retry(countdown=retry_delay, exc=Exception(f"Activity {activity_id} not yet in database"))
 
     activity.update_status(ProcessingStatus.PROCESSING)
     logger.info(f"Starting processing activity {activity_id}")

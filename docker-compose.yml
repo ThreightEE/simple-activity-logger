@@ -25,7 +25,7 @@ services:
       - DATABASE_URL=postgres://postgres:postgres@db:5432/activity_db
       - DEBUG=TRUE
       - SECRET_KEY=demo
-      - ALLOWED_HOSTS=localhost,127.0.0.1
+      - ALLOWED_HOSTS=localhost,127.0.0.1,web
       - REDIS_URL=redis://redis:6379/0
       - CELERY_BROKER_URL=redis://redis:6379/0
       - CELERY_RESULT_BACKEND=redis://redis:6379/0
@@ -42,7 +42,7 @@ services:
       - DATABASE_URL=postgres://postgres:postgres@db:5432/activity_db
       - DEBUG=TRUE
       - SECRET_KEY=demo
-      - ALLOWED_HOSTS=localhost,127.0.0.1
+      - ALLOWED_HOSTS=localhost,127.0.0.1,web
       - REDIS_URL=redis://redis:6379/0
       - CELERY_BROKER_URL=redis://redis:6379/0
       - CELERY_RESULT_BACKEND=redis://redis:6379/0
@@ -63,6 +63,31 @@ services:
       - CELERY_BROKER_URL=redis://redis:6379/0
       - REDIS_URL=redis://redis:6379/0
       - CELERY_RESULT_BACKEND=redis://redis:6379/0
+
+  prometheus:
+    image: prom/prometheus:latest
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml
+    depends_on:
+      - web
+
+  metrics:
+    build: .
+    command: python start_metrics.py
+    volumes:
+      - .:/app
+    ports:
+      - "8001:8001"
+    environment:
+      - DATABASE_URL=postgres://postgres:postgres@db:5432/activity_db
+      - DEBUG=TRUE
+      - SECRET_KEY=demo
+      - REDIS_URL=redis://redis:6379/0
+      - CELERY_BROKER_URL=redis://redis:6379/0
+    depends_on:
+      - redis
 
 volumes:
   postgres_data:
