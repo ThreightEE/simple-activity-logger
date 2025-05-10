@@ -29,7 +29,7 @@ def home(request: HttpRequest) -> HttpResponse:
         'configs': configs,
     }
 
-    return render(request, 'config_app/home.html', context)
+    return render(request, 'realtime_config/home.html', context)
 
 
 def get_all_configs_api(request: HttpRequest) -> JsonResponse:

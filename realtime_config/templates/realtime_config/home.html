@@ -73,7 +73,7 @@
                 return; 
             }
             
-            fetch('/api/logs/')
+            fetch("{% url 'realtime_config:get_change_logs_api' %}")
                 .then(response => {
                     if (!response.ok) throw new Error(`HTTP error, status: ${response.status}`);
                     return response.json();
@@ -108,7 +108,7 @@
         }
         
         function getConfigs() {
-            fetch('/api/configs/')
+            fetch("{% url 'realtime_config:get_all_configs_api' %}")
                 .then(response => response.json())
                 .then(data => {
                     document.getElementById('main-content').style.display = data.MAINTENANCE_MODE ? 'none' : 'block';

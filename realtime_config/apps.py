@@ -22,7 +22,7 @@ class ConfigAppConfig(AppConfig):
         pid: int = os.getpid()
         logger.info(f"ConfigAppConfig.ready() CALLED in PID: {pid}")
 
-        # Don't call on basic manage.py commands
+        # Don't run init for basic manage.py commands
         management_commands: List[str] = [
             'makemigrations', 'migrate', 'collectstatic', 'check', 'shell', 'help',
             'createsuperuser', 'loaddata', 'dumpdata'
@@ -40,6 +40,13 @@ class ConfigAppConfig(AppConfig):
         if is_runserver_main_process:
             logger.info(f"PID {pid}: Skipping Pub/Sub setup "
                         "for runserver reloader process")
+            return
+        
+        # Don't run init for start_metrics
+        is_metrics_script = 'start_metrics.py' in sys.argv[0]
+        if is_metrics_script:
+            logger.info(f"PID {pid}: Skipping Pub/Sub setup "
+                        "for metrics utility")
             return
         
         if pid in self.__class__._initialized_pids:

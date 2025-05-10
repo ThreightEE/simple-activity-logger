@@ -5,7 +5,7 @@ from typing import List
 from django.urls.resolvers import URLPattern
 
 
-app_name: str = 'config_app'
+app_name: str = 'realtime_config'
 
 urlpatterns: List[URLPattern] = [
     path('', views.home, name='home'),

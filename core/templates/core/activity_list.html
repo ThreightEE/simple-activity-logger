@@ -159,7 +159,7 @@ document.addEventListener('DOMContentLoaded', function() {
             .catch(error => console.error('Fetch error:', error));
     }
 
-    const interval = setInterval(updateStatuses, 2000);
+    const interval = setInterval(updateStatuses, {{ polling_interval|default:"2000" }});
     updateStatuses();
 
     window.addEventListener('beforeunload', () => {

@@ -166,6 +166,7 @@ def run_subscriber() -> None:
                         with _cache_lock:
                             # logger.debug(f"PID: {os.getpid()}, cache before invalidation: {_local_cache}")
                             removed_value: Any = _local_cache.pop(key, None)
+                            logger.info(f"PID {os.getpid()}, removed value: {removed_value}")
 
                     if removed_value is not None:
                         logger.info(f"Invalidated cache for key: {key}")
@@ -208,6 +209,7 @@ def start_subscriber_thread() -> None:
                 name="RedisConfigSubscriber"
             )
             _subscriber_thread.start()
+            print(f"STARTED SUBSCRIBER THREAD IN PID: {os.getpid()}")
             logger.info(f"Started Redis Pub/Sub subscriber thread: {_subscriber_thread.name}")
         else:
             logger.info(f"Redis Pub/Sub subscriber thread '{_subscriber_thread.name}' is already running.")

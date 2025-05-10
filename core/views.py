@@ -15,8 +15,8 @@ from .tasks import process_activity
 from django.http import JsonResponse
 from .monitoring import get_counter
 
+from realtime_config.realtime_config import get_config
 
-listview_paginate = 10
 
 logger = logging.getLogger(__name__)
 
@@ -28,14 +28,22 @@ class ActivityListView(ListView):
     model = Activity
     template_name = 'core/activity_list.html'
     context_object_name = 'activities'
-    paginate_by = listview_paginate
+    
+    def get_paginate_by(self, queryset):
+        """
+        Realtime config for activities display per page.
+        """
+        return int(get_config('ACTIVITIES_PER_PAGE', 9))
     
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
-        # Add count of pending activities to context
         context['pending_count'] = Activity.objects.filter(
             status=ProcessingStatus.PENDING
         ).count()
+
+        # Realtime config
+        context['polling_interval'] = float(get_config('ACTIVITY_POLLING_S', 2.0)) \
+            * 1000
         return context
 
 
