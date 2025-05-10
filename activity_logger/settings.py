@@ -11,6 +11,8 @@ import environ
 
 from celery.schedules import crontab
 
+from typing import Any, Dict, Tuple
+
 
 celery_task_limit_seconds = 30 * 60
 celery_task_limit_soft_seconds = 25 * 60
@@ -46,13 +48,19 @@ INSTALLED_APPS = [
     'django.contrib.messages',
     'django.contrib.staticfiles',
 
+    'constance',
+
     'django_celery_results',
     'django_prometheus',
     # Add core application
     'core',
+
+    'realtime_config',
 ]
 
 MIDDLEWARE = [
+    'realtime_config.middleware.LogRequestPIDMiddleware',
+    
     'django_prometheus.middleware.PrometheusBeforeMiddleware',
     'django.middleware.security.SecurityMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
@@ -94,6 +102,99 @@ DATABASES = {
 }
 
 
+# Celery settings
+
+CELERY_BROKER_URL = env('CELERY_BROKER_URL', default='redis://redis:6379/0')
+CELERY_RESULT_BACKEND = env('CELERY_RESULT_BACKEND', default='redis://redis:6379/0')
+CELERY_ACCEPT_CONTENT = ['json']
+CELERY_TASK_SERIALIZER = 'json'
+
+CELERY_RESULT_SERIALIZER = 'json'
+
+# If storing task results in Django
+# CELERY_RESULT_BACKEND = 'django-db'
+CELERY_TASK_TIME_LIMIT = celery_task_limit_seconds
+CELERY_TASK_SOFT_TIME_LIMIT = celery_task_limit_soft_seconds
+
+CELERY_TASK_ROUTES = {
+    'core.tasks.process_activity': {'queue': 'activities'},
+}
+
+CELERY_BEAT_SCHEDULE = {
+    'requeue-pending-activities': {
+        'task': 'core.tasks.requeue_pending_activities',
+        'schedule': crontab(minute='*/' + str(requeue_pending_minutes)),
+        'options': {
+            'queue': 'activities',
+            'expires': 60 * requeue_expire_minutes,
+        },
+    },
+}
+
+
+# Constance settings - - - define realtime configs here!
+
+CONSTANCE_BACKEND: str = 'constance.backends.redisd.RedisBackend'
+
+_base_redis_url = CELERY_BROKER_URL.rsplit('/', 1)[0]
+_constance_redis_db = env.int('CONSTANCE_REDIS_DB', default=1)
+#CONSTANCE_REDIS_CONNECTION = f"{_base_redis_url}/{_constance_redis_db}"
+
+CONSTANCE_REDIS_CONNECTION = {
+    'host': 'redis',
+    'port': 6379,
+    'db': env.int('CONSTANCE_REDIS_DB', default=1),
+}
+
+CONSTANCE_CONFIG: Dict[str, Tuple[Any, str, type]] = {
+    # 'CONFIG_NAME': (default, 'description', config type)
+    
+    # MET values to calculate calories
+    'MET_RUN': (9.0, 'MET value for running', float),
+    'MET_WALK': (3.5, 'MET value for walking', float),
+    'MET_CYCLE': (8.0, 'MET value for cycling', float),
+    'MET_SWIM': (6.5, 'MET value for swimming', float),
+    'MET_YOGA': (4.0, 'MET value for yoga', float),
+
+    'DEFAULT_WEIGHT': (70.0, 'Default weight in kg', float),
+    
+    'ACTIVITIES_PER_PAGE': (10, 'Activities per page in list view', int),
+    'ACTIVITY_POLLING_S': (2.0, 'Polling interval for activity app, s', float),
+    
+    'TASK_PROCESSING_DELAY_S': (5.0, 'Artificial delay in task processing, s', float),
+
+    # Configs for realtime config view
+    'SITE_NAME': ('Config Manager', 'Site name', str),
+    'WELCOME_MESSAGE': ('You can see real-time configs and their values here', 'Welcome text', str),
+    'THEME_COLOR': ('#4a6cf7', 'Background theme colour in HEX', str),
+    'MAINTENANCE_MODE': (False, 'Maintenance mode', bool),
+    'ITEMS_PER_PAGE': (5, 'Config items per page', int),
+
+    'SHOW_LOGS': (True, 'Show change logs', bool),
+    'LOGS_COUNT': (10, 'Number of recent change logs to show', int),
+
+    'UI_POLLING_INTERVAL': (300.0, 'Polling interval for real-time UI, s', float),
+}
+
+# Any config you add must appear here in some fieldset! also definable
+CONSTANCE_CONFIG_FIELDSETS: Dict[str, Tuple[str, ...]] = {
+    'Activity MET Values': ('MET_RUN', 'MET_WALK', 'MET_CYCLE', 'MET_SWIM', 'MET_YOGA'),
+    'User Default': ('DEFAULT_WEIGHT',),
+    'UI': ('ACTIVITIES_PER_PAGE', 'ACTIVITY_POLLING_S'),
+    'Demo Task Processing': ('TASK_PROCESSING_DELAY_S',),
+
+    'General': ('SITE_NAME', 'THEME_COLOR', 'MAINTENANCE_MODE'),
+    'Content': ('WELCOME_MESSAGE', 'ITEMS_PER_PAGE'),
+    'Logging': ('SHOW_LOGS', 'LOGS_COUNT'),
+    'Demo': ('UI_POLLING_INTERVAL',)
+}
+
+REDIS_PUB_SUB_CHANNEL: str = 'realtime_config_updates'
+
+# Time to wait for before trying to connect to Redis again
+REDIS_RETRY_INTERVAL: float = 10.0
+
+
 # Password validation
 
 AUTH_PASSWORD_VALIDATORS = [
@@ -130,32 +231,4 @@ STATIC_URL = 'static/'
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 
-# Celery conf
-
-CELERY_BROKER_URL = env('CELERY_BROKER_URL', default='redis://redis:6379/0')
-CELERY_RESULT_BACKEND = env('CELERY_RESULT_BACKEND', default='redis://redis:6379/0')
-CELERY_ACCEPT_CONTENT = ['json']
-CELERY_TASK_SERIALIZER = 'json'
 CELERY_TIMEZONE = TIME_ZONE
-
-CELERY_RESULT_SERIALIZER = 'json'
-
-# If storing task results in Django
-# CELERY_RESULT_BACKEND = 'django-db'
-CELERY_TASK_TIME_LIMIT = celery_task_limit_seconds
-CELERY_TASK_SOFT_TIME_LIMIT = celery_task_limit_soft_seconds
-
-CELERY_TASK_ROUTES = {
-    'core.tasks.process_activity': {'queue': 'activities'},
-}
-
-CELERY_BEAT_SCHEDULE = {
-    'requeue-pending-activities': {
-        'task': 'core.tasks.requeue_pending_activities',
-        'schedule': crontab(minute='*/' + str(requeue_pending_minutes)),
-        'options': {
-            'queue': 'activities',
-            'expires': 60 * requeue_expire_minutes,
-        },
-    },
-}

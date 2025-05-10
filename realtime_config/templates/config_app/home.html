@@ -1,0 +1,229 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ site_name }}</title>
+    <style>
+        body { font-family: sans-serif; margin: 0; padding: 0; }
+        header { background-color: {{ theme_color }}; color: white; padding: 15px; }
+        .container { max-width: 800px; margin: 0 auto; padding: 15px; }
+        .config-item { margin: 5px 0; padding: 8px; background-color: #f5f5f5; }
+        .maintenance { background-color: #ffe6e6; padding: 20px; text-align: center; }
+        .pagination { margin: 15px 0; }
+        .pagination button { background: #4a6cf7; color: white; border: none; padding: 5px 10px; margin: 0 5px; cursor: pointer; }
+        .pagination span { margin: 0 10px; }
+        .page { display: none; }
+        .active { display: block; }
+
+        .logs-table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+        .logs-table th, .logs-table td { border: 1px solid #ddd; padding: 8px; text-align: left; font-size: 0.9em; }
+        .logs-table th { background-color: #e9e9e9; }
+        .logs-table td:nth-child(3), .logs-table td:nth-child(4) {
+            max-width: 200px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+    </style>
+</head>
+<body>
+    <header>
+        <h1>{{ site_name }}</h1>
+    </header>
+    
+    <div class="container">
+        <div id="main-content" style="display: {% if maintenance_mode %}none{% else %}block{% endif %};">
+            <h2>{{ welcome_message }}</h2>
+            
+            <h3>Configuration Settings</h3>
+            <div id="configs-container">
+            </div>
+            
+            <div class="pagination">
+                <button id="prev-page">Previous</button>
+                <span id="page-indicator">Page 1 of 1</span>
+                <button id="next-page">Next</button>
+            </div>
+            
+            <div id="logs-section" style="display: {% if show_logs %}block{% else %}none{% endif %};">
+                <h3>Configuration Change Logs</h3>
+                <div id="logs" style="padding: 10px; background-color: #f0f0f0;">
+                    <p>Configuration change logs would appear here</p>
+                </div>
+            </div>
+        </div>
+
+        <div id="maintenance" class="maintenance" style="display: {% if maintenance_mode %}block{% else %}none{% endif %};">
+            <h2>Site is Under Maintenance</h2>
+            <p>Please check back later.</p>
+        </div>
+    </div>
+
+    <script>
+        var pollingInterval = {{ polling_s }} * 1000;
+        var timer;
+        var currentPage = 1;
+        var totalPages = 1;
+        var itemsPerPage = {{ items_per_page }};
+        
+        function loadConfigLogs() {
+            const logsSection = document.getElementById('logs-section');
+            if (logsSection.style.display === 'none') {
+                return; 
+            }
+            
+            fetch('/api/logs/')
+                .then(response => {
+                    if (!response.ok) throw new Error(`HTTP error, status: ${response.status}`);
+                    return response.json();
+                })
+                .then(data => {
+                    const logsContainer = document.getElementById('logs');
+                    if (!logsContainer) return;
+                    
+                    if (data.logs && data.logs.length > 0) {
+                        let html = '<table class="logs-table"><thead><tr>' +
+                                   '<th>Time</th><th>Setting</th><th>Old Value</th><th>New Value</th>' +
+                                   '</tr></thead><tbody>';
+                        data.logs.forEach(log => {
+                            html += `<tr>
+                                <td>${log.changed_at}</td>
+                                <td>${log.key}</td>
+                                <td>${log.old_value || '-'}</td> 
+                                <td>${log.new_value || '-'}</td>
+                            </tr>`;
+                        });
+                        html += '</tbody></table>';
+                        logsContainer.innerHTML = html;
+                    } else {
+                        logsContainer.innerHTML = '<p>Configuration change logs would appear here</p>';
+                    }
+                })
+                .catch(error => {
+                    console.error('Error loading logs:', error);
+                    const logsContainer = document.getElementById('logs');
+                    if (logsContainer) logsContainer.innerHTML = '<p>Error loading configuration change logs</p>';
+                });
+        }
+        
+        function getConfigs() {
+            fetch('/api/configs/')
+                .then(response => response.json())
+                .then(data => {
+                    document.getElementById('main-content').style.display = data.MAINTENANCE_MODE ? 'none' : 'block';
+                    document.getElementById('maintenance').style.display = data.MAINTENANCE_MODE ? 'block' : 'none';
+                    document.getElementById('logs-section').style.display = data.SHOW_LOGS ? 'block' : 'none';
+                    
+                    if (data.SITE_NAME !== undefined) {
+                        document.title = data.SITE_NAME;
+                        const siteTitleHeader = document.querySelector('header h1'); 
+                        if (siteTitleHeader) {
+                            siteTitleHeader.textContent = data.SITE_NAME;
+                        }
+                    }
+                    
+                    if (data.THEME_COLOR !== undefined) {
+                        const headerElement = document.querySelector('header');
+                        if (headerElement) {
+                            headerElement.style.backgroundColor = data.THEME_COLOR;
+                        }
+
+                        const paginationButtons = document.querySelectorAll('.pagination button');
+                            paginationButtons.forEach(button => {
+                            button.style.backgroundColor = data.THEME_COLOR;
+                        });
+                    }
+    
+                    if (data.WELCOME_MESSAGE !== undefined) {
+                        const welcomeMessageElement = document.querySelector('#main-content h2'); 
+                        if (welcomeMessageElement) {
+                            welcomeMessageElement.textContent = data.WELCOME_MESSAGE;
+                        }
+                    }
+                    
+                    if (data.ITEMS_PER_PAGE) {
+                        itemsPerPage = data.ITEMS_PER_PAGE;
+                    }
+                    renderPaginatedConfigs(data);
+
+                    if (data.SHOW_LOGS) {
+                        loadConfigLogs();
+                    }
+
+                    if (data.UI_POLLING_INTERVAL && data.UI_POLLING_INTERVAL * 1000 !== pollingInterval) {
+                        pollingInterval = data.UI_POLLING_INTERVAL * 1000;
+                        clearTimeout(timer);
+                        timer = setTimeout(getConfigs, pollingInterval);
+                    }
+                })
+                .catch(error => console.error('Error:', error))
+                .finally(() => {
+                    clearTimeout(timer);
+                    timer = setTimeout(getConfigs, pollingInterval);
+                });
+        }
+        
+        function renderPaginatedConfigs(data) {
+            var container = document.getElementById('configs-container');
+            container.innerHTML = '';
+            
+            var keys = Object.keys(data);
+            totalPages = Math.ceil(keys.length / itemsPerPage);
+            
+            for (var page = 1; page <= totalPages; page++) {
+                var pageDiv = document.createElement('div');
+                pageDiv.className = 'page';
+                pageDiv.id = 'page-' + page;
+                if (page === currentPage) {
+                    pageDiv.classList.add('active');
+                }
+                
+                var startIdx = (page - 1) * itemsPerPage;
+                var endIdx = Math.min(startIdx + itemsPerPage, keys.length);
+                
+                for (var i = startIdx; i < endIdx; i++) {
+                    var key = keys[i];
+                    var value = data[key];
+                    
+                    var item = document.createElement('div');
+                    item.className = 'config-item';
+                    item.innerHTML = `<strong>${key}:</strong> <span id="config-${key}">${value}</span>`;
+                    
+                    pageDiv.appendChild(item);
+                }
+                
+                container.appendChild(pageDiv);
+            }
+            
+            document.getElementById('page-indicator').textContent = `Page ${currentPage} of ${totalPages}`;
+            document.getElementById('prev-page').disabled = currentPage <= 1;
+            document.getElementById('next-page').disabled = currentPage >= totalPages;
+        }
+        
+        document.getElementById('prev-page').onclick = function() {
+            if (currentPage > 1) {
+                document.getElementById('page-' + currentPage).classList.remove('active');
+                currentPage--;
+                document.getElementById('page-' + currentPage).classList.add('active');
+                document.getElementById('page-indicator').textContent = `Page ${currentPage} of ${totalPages}`;
+                this.disabled = currentPage <= 1;
+                document.getElementById('next-page').disabled = false;
+            }
+        };
+        
+        document.getElementById('next-page').onclick = function() {
+            if (currentPage < totalPages) {
+                document.getElementById('page-' + currentPage).classList.remove('active');
+                currentPage++;
+                document.getElementById('page-' + currentPage).classList.add('active');
+                document.getElementById('page-indicator').textContent = `Page ${currentPage} of ${totalPages}`;
+                this.disabled = currentPage >= totalPages;
+                document.getElementById('prev-page').disabled = false;
+            }
+        };
+        
+        getConfigs();
+    </script>
+</body>
+</html>
