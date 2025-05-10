@@ -76,18 +76,42 @@ class ActivityCreateView(CreateView):
             response = super().form_valid(form)
             # Get the new activity instance
             activity = self.object
-            # Queue task with default options and get its id
-            task_result = process_activity.delay(activity.id)
 
-            # Store id in the model
-            activity.celery_task_id = task_result.id
-            activity.save(update_fields=['celery_task_id'])
+            try:
+                # Queue task with default options and get its id
+                task_result = process_activity.delay(activity.id)
 
-            # Log the creation
-            logger.info(
-                f"New activity created: {activity.id} ({activity.activity_type}), "
-                f"and queued for processing with task {task_result.id}"
-            )
+                # Store id in the model
+                activity.celery_task_id = task_result.id
+                activity.save(update_fields=['celery_task_id'])
+
+                # Log the creation
+                logger.info(
+                    f"New activity created: {activity.id} ({activity.activity_type}), "
+                    f"and queued for processing with task {task_result.id}"
+                )
+            except Exception as e:
+                logger.info(f"Processing activity {activity.id} synchronously "
+                            "due to Redis unavailability")
+                try:
+                    activity.update_status(ProcessingStatus.PROCESSING)
+                    calories = activity.calculate_calories()
+                    if calories is not None:
+                        activity.update_status(ProcessingStatus.COMPLETED, calories=calories)
+                        messages.success(self.request, "Activity processed locally (Redis unavailable)")
+                    else:
+                        activity.update_status(
+                            ProcessingStatus.FAILED, 
+                            error_msg="Failed to calculate calories"
+                        )
+                        messages.warning(self.request, "Could not calculate calories")
+                except Exception as process_error:
+                    logger.error(f"Error processing activity synchronously: {process_error}")
+                    activity.update_status(
+                        ProcessingStatus.FAILED, 
+                        error_msg=f"Local processing error: {str(process_error)}"
+                    )
+                    messages.error(self.request, "Failed to process activity")           
 
         messages.success(
             self.request, 
