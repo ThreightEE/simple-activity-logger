@@ -9,14 +9,17 @@ services:
       - POSTGRES_DB=activity_db
     ports:
       - "5432:5432"
+      
   redis:
     image: redis:7-alpine
     ports:
       - "6379:6379"
+    volumes:
+      - redis_data:/data
   
   web:
     build: .
-    command: python manage.py runserver 0.0.0.0:8000
+    command: python manage.py runserver 0.0.0.0:8000 --noreload
     volumes:
       - .:/app
     ports:
@@ -29,6 +32,7 @@ services:
       - REDIS_URL=redis://redis:6379/0
       - CELERY_BROKER_URL=redis://redis:6379/0
       - CELERY_RESULT_BACKEND=redis://redis:6379/0
+      - CONSTANCE_REDIS_DB=1
     depends_on:
       - db
       - redis
@@ -46,6 +50,7 @@ services:
       - REDIS_URL=redis://redis:6379/0
       - CELERY_BROKER_URL=redis://redis:6379/0
       - CELERY_RESULT_BACKEND=redis://redis:6379/0
+      - CONSTANCE_REDIS_DB=1
     depends_on:
       - db
       - redis
@@ -63,6 +68,7 @@ services:
       - CELERY_BROKER_URL=redis://redis:6379/0
       - REDIS_URL=redis://redis:6379/0
       - CELERY_RESULT_BACKEND=redis://redis:6379/0
+      - CONSTANCE_REDIS_DB=1
 
   prometheus:
     image: prom/prometheus:latest
@@ -86,8 +92,10 @@ services:
       - SECRET_KEY=demo
       - REDIS_URL=redis://redis:6379/0
       - CELERY_BROKER_URL=redis://redis:6379/0
+      - CONSTANCE_REDIS_DB=1
     depends_on:
       - redis
 
 volumes:
   postgres_data:
+  redis_data:

@@ -21,4 +21,7 @@ urlpatterns = [
     path('admin/', admin.site.urls),
     path('', include('core.urls')),
     path('', include('django_prometheus.urls')),
+
+    # Realtime config values page
+    path('config/', include('realtime_config.urls')),
 ]

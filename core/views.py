@@ -15,8 +15,8 @@ from .tasks import process_activity
 from django.http import JsonResponse
 from .monitoring import get_counter
 
+from realtime_config.realtime_config import get_config
 
-listview_paginate = 10
 
 logger = logging.getLogger(__name__)
 
@@ -28,14 +28,22 @@ class ActivityListView(ListView):
     model = Activity
     template_name = 'core/activity_list.html'
     context_object_name = 'activities'
-    paginate_by = listview_paginate
+    
+    def get_paginate_by(self, queryset):
+        """
+        Realtime config for activities display per page.
+        """
+        return int(get_config('ACTIVITIES_PER_PAGE', 9))
     
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
-        # Add count of pending activities to context
         context['pending_count'] = Activity.objects.filter(
             status=ProcessingStatus.PENDING
         ).count()
+
+        # Realtime config
+        context['polling_interval'] = float(get_config('ACTIVITY_POLLING_S', 2.0)) \
+            * 1000
         return context
 
 
@@ -68,18 +76,42 @@ class ActivityCreateView(CreateView):
             response = super().form_valid(form)
             # Get the new activity instance
             activity = self.object
-            # Queue task with default options and get its id
-            task_result = process_activity.delay(activity.id)
 
-            # Store id in the model
-            activity.celery_task_id = task_result.id
-            activity.save(update_fields=['celery_task_id'])
+            try:
+                # Queue task with default options and get its id
+                task_result = process_activity.delay(activity.id)
 
-            # Log the creation
-            logger.info(
-                f"New activity created: {activity.id} ({activity.activity_type}), "
-                f"and queued for processing with task {task_result.id}"
-            )
+                # Store id in the model
+                activity.celery_task_id = task_result.id
+                activity.save(update_fields=['celery_task_id'])
+
+                # Log the creation
+                logger.info(
+                    f"New activity created: {activity.id} ({activity.activity_type}), "
+                    f"and queued for processing with task {task_result.id}"
+                )
+            except Exception as e:
+                logger.info(f"Processing activity {activity.id} synchronously "
+                            "due to Redis unavailability")
+                try:
+                    activity.update_status(ProcessingStatus.PROCESSING)
+                    calories = activity.calculate_calories()
+                    if calories is not None:
+                        activity.update_status(ProcessingStatus.COMPLETED, calories=calories)
+                        messages.success(self.request, "Activity processed locally (Redis unavailable)")
+                    else:
+                        activity.update_status(
+                            ProcessingStatus.FAILED, 
+                            error_msg="Failed to calculate calories"
+                        )
+                        messages.warning(self.request, "Could not calculate calories")
+                except Exception as process_error:
+                    logger.error(f"Error processing activity synchronously: {process_error}")
+                    activity.update_status(
+                        ProcessingStatus.FAILED, 
+                        error_msg=f"Local processing error: {str(process_error)}"
+                    )
+                    messages.error(self.request, "Failed to process activity")           
 
         messages.success(
             self.request, 

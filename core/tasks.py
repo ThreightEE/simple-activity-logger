@@ -7,6 +7,8 @@ from .enums import ProcessingStatus
 
 from .monitoring import increment_counter, increment_counter_by
 
+from realtime_config.realtime_config import get_config
+
 
 logger = logging.getLogger(__name__)
 
@@ -29,7 +31,9 @@ def process_activity(self, activity_id):
     ! Delay to simulate processing.
     Retry if fails.
     """
-
+    # realtime config
+    delay_time = float(get_config('TASK_PROCESSING_DELAY_S', 5.0))
+    
     increment_counter('tasks_started')
 
     # Start timing for performance monitoring
